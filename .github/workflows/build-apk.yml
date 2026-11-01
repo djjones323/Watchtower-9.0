@@ -1,0 +1,64 @@
+name: Build WATCHTOWER 9.0 APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME" -name sdkmanager -type f | head -n 1)
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Extract WATCHTOWER
+        run: |
+          mkdir -p "$RUNNER_TEMP/wt"
+          unzip -q WATCHTOWER-9.0-FULLSCREEN-MAP.zip -d "$RUNNER_TEMP/wt"
+          test -f "$RUNNER_TEMP/wt/watchtower/settings.gradle.kts"
+
+      - name: Configure Java 17
+        run: |
+          cat >> "$RUNNER_TEMP/wt/watchtower/app/build.gradle.kts" <<'EOF'
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: gradle -p "$RUNNER_TEMP/wt/watchtower" assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WATCHTOWER-9.0-APK
+          path: ${{ runner.temp }}/wt/watchtower/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
